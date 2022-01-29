@@ -1,0 +1,228 @@
+name: IaC Deployment
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/*
+      - code/*
+      - .ado/workflows/azure-pipelines.yml
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra/*
+      - code/*
+      - .ado/workflows/azure-pipelines.yml
+
+variables:
+  - name: AZURE_RESOURCE_MANAGER_CONNECTION_NAME
+    value: "azure-devops-service-connection" # Update to '{yourResourceManagerConnectionName}'
+  - group: demo-vg
+
+
+stages:
+  - stage: Validation
+    displayName: "Validation and Build"
+    jobs:
+      - job: Validation
+        displayName: "Validation of IaC templates and SQL Build"
+        continueOnError: false
+        pool:
+          vmImage: "ubuntu-latest"
+
+        steps:
+          # Checkout code
+          - checkout: self
+            name: checkout_repository
+            displayName: Checkout repository
+            submodules: true
+            lfs: false
+            clean: true
+            continueOnError: false
+            enabled: true
+        
+
+          # Generate Password
+          - task: PowerShell@2
+            name: generate_password_001
+            displayName: Generate Password
+            enabled: true
+            continueOnError: false
+            inputs:
+              targetType: 'filePath'
+              filePath: '$(System.DefaultWorkingDirectory)/code/GeneratePassword.ps1'
+              errorActionPreference: 'stop'
+              failOnStderr: false
+              ignoreLASTEXITCODE: false
+              pwsh: true
+
+          # Deploy ARM - validation
+          - task: AzureResourceManagerTemplateDeployment@3
+            name: ARM_validation
+            displayName: ARM - validation
+            enabled: true
+            continueOnError: false
+            inputs:
+              deploymentScope: "Subscription"
+              azureResourceManagerConnection: $(AZURE_RESOURCE_MANAGER_CONNECTION_NAME)
+              location: $(AZURE_LOCATION)
+              templateLocation: "Linked artifact"
+              csmFile: "$(System.DefaultWorkingDirectory)/infra/main.json"
+              csmParametersFile: "$(System.DefaultWorkingDirectory)/infra/params_demo.json"
+              deploymentMode: "Validation"
+              overrideParameters: >
+                -sqlPassword "$(password)" -sqlserverAdminUserObjectID "$(USER_OBJECT_ID)" -sqlserverAdminUser "$(USER_PRINCIPAL_NAME)" -prefix "$(PREFIX)" -uniqueId "$(DEPLOY_ID)"
+
+          # Deploy ARM - what-if
+          - task: AzureCLI@2
+            name: ARM_whatif
+            displayName: Deploy ARM - what-if
+            enabled: true
+            continueOnError: false
+            inputs:
+              azureSubscription: $(AZURE_RESOURCE_MANAGER_CONNECTION_NAME)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                az account set `
+                  --subscription $(AZURE_SUBSCRIPTION_ID)
+                
+                az deployment sub what-if `
+                  --location $(AZURE_LOCATION) `
+                  --subscription $(AZURE_SUBSCRIPTION_ID) `
+                  --exclude-change-types Ignore NoChange Unsupported `
+                  --template-file "$(System.DefaultWorkingDirectory)/infra/main.json" `
+                  --parameters "$(System.DefaultWorkingDirectory)/infra/params_demo.json" sqlPassword="$(password)" sqlserverAdminUserObjectID="$(USER_OBJECT_ID)" sqlserverAdminUser="$(USER_PRINCIPAL_NAME)" prefix="$(PREFIX)" uniqueId="$(DEPLOY_ID)`
+                  --result-format "FullResourcePayloads"
+                
+              powerShellErrorActionPreference: "stop"
+              addSpnToEnvironment: false
+              useGlobalConfig: false
+              failOnStandardError: false
+              powerShellIgnoreLASTEXITCODE: false
+
+      - job: sqlBuild
+        displayName: "SQL Database Build"
+        continueOnError: false
+        pool:
+          vmImage: "windows-2019"
+          demands:
+          - msbuild
+          - visualstudio
+        steps:
+          - task: VSBuild@1
+            displayName: 'Build sqlproj'
+            inputs:
+              solution: "$(System.DefaultWorkingDirectory)/src/PipelineMetastoreDatabase/*.sqlproj"
+          - task: CopyFiles@2
+            displayName: 'Copy Files to: $(build.artifactstagingdirectory)'
+            inputs:
+              SourceFolder: '$(agent.builddirectory)'
+              TargetFolder: '$(build.artifactstagingdirectory)'
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Artifact drop'
+            inputs:
+              PathtoPublish: '$(build.artifactstagingdirectory)'
+              ArtifactName: 'drop'
+              publishLocation: 'Container'
+
+  - stage: Deployment
+    displayName: "Deployment"
+    dependsOn: Validation
+    # condition: and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI'))
+    jobs:
+      - job: Deployment
+        displayName: "Deployment"
+        continueOnError: false
+        pool:
+          vmImage: "windows-latest"
+
+        steps:
+          # Checkout repository
+          - checkout: self
+            name: checkout_repository
+            displayName: "Checkout repository"
+            submodules: true
+            lfs: false
+            clean: true
+            continueOnError: false
+            enabled: true
+
+          # Generate Password
+          - task: PowerShell@2
+            name: generate_password_001
+            displayName: Generate Password
+            enabled: true
+            continueOnError: false
+            inputs:
+              targetType: 'filePath'
+              filePath: '$(System.DefaultWorkingDirectory)/code/GeneratePassword.ps1'
+              errorActionPreference: 'stop'
+              failOnStderr: false
+              ignoreLASTEXITCODE: false
+              pwsh: true
+
+          # Deploy ARM
+          - task: AzureResourceManagerTemplateDeployment@3
+            name: arm_deployment
+            displayName: ARM Deployment
+            enabled: true
+            continueOnError: false
+            inputs:
+              deploymentScope: "Subscription"
+              azureResourceManagerConnection: $(AZURE_RESOURCE_MANAGER_CONNECTION_NAME)
+              subscriptionId: $(AZURE_SUBSCRIPTION_ID)
+              location: $(AZURE_LOCATION)
+              templateLocation: "Linked artifact"
+              csmFile: "$(System.DefaultWorkingDirectory)/infra/main.json"
+              csmParametersFile: "$(System.DefaultWorkingDirectory)/infra/params_demo.json"
+              deploymentMode: "Incremental"
+              deploymentOutputs: 'armOutputs'
+              overrideParameters: >
+                -sqlPassword "$(password)" -sqlserverAdminUserObjectID "$(USER_OBJECT_ID)" -sqlserverAdminUser "$(USER_PRINCIPAL_NAME)" -prefix "$(PREFIX)" -uniqueId "$(DEPLOY_ID)" 
+
+          - script: echo $(armOutputs)
+            displayName: 'Log armOutputs'
+          - bash: |
+              echo "##vso[task.setvariable variable=PURVIEW_ROOT_ADMIN_POST_URL]$(echo $ARM_OUTPUTS | jq -r '.purviewRootAdminPostUrl.value')"
+              echo "##vso[task.setvariable variable=SQL_SERVER_HOSTNAME]$(echo $ARM_OUTPUTS | jq -r '.sqlserverHostName.value')"
+              echo "##vso[task.setvariable variable=META_STORE_DATABASE_NAME]$(echo $ARM_OUTPUTS | jq -r '.metaStoreDatabaseName.value')"
+              echo "##vso[task.setvariable variable=SQL_ADMIN_USER]$(echo $ARM_OUTPUTS | jq -r '.sqlAdminUser.value')"
+            displayName: 'Parse ARM deploymentOutputs | bash'           
+            env:
+              ARM_OUTPUTS: $(armOutputs) 
+
+          - task: AzureCLI@2
+            name: post_az_cli
+            displayName: Post ARM Deployment 1 | Assignment Purview Root Administorator
+            inputs:
+              azureSubscription: $(AZURE_RESOURCE_MANAGER_CONNECTION_NAME)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo 'add purview root admin'  
+                az rest --method post --url $(PURVIEW_ROOT_ADMIN_POST_URL) --body "{\"objectId\":\"$(USER_OBJECT_ID)\"}"
+
+          - task: DownloadBuildArtifacts@0
+            displayName: 'download Artifact drop'
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'drop'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          - task: SqlAzureDacpacDeployment@1
+            displayName: 'Azure SQL DacpacTask'
+            inputs:
+              azureSubscription: $(AZURE_RESOURCE_MANAGER_CONNECTION_NAME)
+              ServerName: $(SQL_SERVER_HOSTNAME)
+              DatabaseName: $(META_STORE_DATABASE_NAME)
+              SqlUsername: $(SQL_ADMIN_USER)
+              SqlPassword: $(password)
+              DacpacFile: '$(System.ArtifactsDirectory)/**/*.dacpac'
+      

@@ -1,0 +1,2055 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.4.1124.51302",
+      "templateHash": "385271068557853013"
+    }
+  },
+  "parameters": {
+    "prefix": {
+      "type": "string",
+      "maxLength": 4,
+      "metadata": {
+        "description": "自分のリソースを識別するためにリソース名の先頭に付与する文字を入力してください。（最大4文字）例：永田→ngt"
+      }
+    },
+    "sqlLogin": {
+      "type": "string",
+      "defaultValue": "sqladmin",
+      "metadata": {
+        "description": "Azure Sql管理者名"
+      }
+    },
+    "sqlPassword": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Azure Sql管理者パスワード"
+      }
+    },
+    "sqlserverAdminUserObjectID": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Azure SqlAD管理者オブジェクトID 空欄可"
+      }
+    },
+    "sqlserverAdminUser": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Azure SqlAD管理者プリンシパル名 欄可"
+      }
+    },
+    "createDate": {
+      "type": "string",
+      "defaultValue": "[utcNow('u')]",
+      "metadata": {
+        "description": "作成日"
+      }
+    },
+    "uniqueId": {
+      "type": "string",
+      "defaultValue": "001"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "japaneast"
+    }
+  },
+  "variables": {
+    "synapseName": "[format('{0}-syn-{1}', parameters('prefix'), parameters('uniqueId'))]",
+    "sqlserverName": "[format('{0}-sql-{1}', parameters('prefix'), parameters('uniqueId'))]",
+    "purviewName": "[format('{0}-apv-{1}', parameters('prefix'), parameters('uniqueId'))]",
+    "storageName": "[replace(replace(toLower(format('{0}-dls-{1}', parameters('prefix'), parameters('uniqueId'))), '-', ''), '_', '')]",
+    "FileSytemNames": [
+      "data"
+    ],
+    "datafactoryName": "[format('{0}-adf-{1}', parameters('prefix'), parameters('uniqueId'))]",
+    "tags": {
+      "Environment": "demo",
+      "CreateDate": "[dateTimeAdd(parameters('createDate'), 'PT9H', 'yyyy/MM/dd')]",
+      "Prefix": "[parameters('prefix')]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "storageDeploy",
+      "resourceGroup": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "fileSystemNames": {
+            "value": "[variables('FileSytemNames')]"
+          },
+          "storageName": {
+            "value": "[variables('storageName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "16274092943595240225"
+            }
+          },
+          "parameters": {
+            "tags": {
+              "type": "object"
+            },
+            "storageName": {
+              "type": "string"
+            },
+            "fileSystemNames": {
+              "type": "array"
+            }
+          },
+          "variables": {
+            "location": "[resourceGroup().location]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2021-02-01",
+              "name": "[parameters('storageName')]",
+              "location": "[variables('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "accessTier": "Hot",
+                "allowBlobPublicAccess": false,
+                "allowSharedKeyAccess": true,
+                "encryption": {
+                  "keySource": "Microsoft.Storage",
+                  "requireInfrastructureEncryption": false,
+                  "services": {
+                    "blob": {
+                      "enabled": true,
+                      "keyType": "Account"
+                    },
+                    "file": {
+                      "enabled": true,
+                      "keyType": "Account"
+                    },
+                    "queue": {
+                      "enabled": true,
+                      "keyType": "Service"
+                    },
+                    "table": {
+                      "enabled": true,
+                      "keyType": "Service"
+                    }
+                  }
+                },
+                "isHnsEnabled": true,
+                "isNfsV3Enabled": false,
+                "largeFileSharesState": "Disabled",
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2021-02-01",
+              "name": "[format('{0}/{1}', parameters('storageName'), 'default')]",
+              "properties": {
+                "containerDeleteRetentionPolicy": {
+                  "enabled": true,
+                  "days": 7
+                },
+                "cors": {
+                  "corsRules": []
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageName'))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "storageFileSystems",
+                "count": "[length(parameters('fileSystemNames'))]"
+              },
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2021-02-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageName'), 'default', parameters('fileSystemNames')[copyIndex()])]",
+              "properties": {
+                "publicAccess": "None",
+                "metadata": {}
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageName'), 'default')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "storageId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageName'))]"
+            },
+            "storageFileSystemIds": {
+              "type": "array",
+              "copy": {
+                "count": "[length(parameters('fileSystemNames'))]",
+                "input": {
+                  "storageFileSystemId": "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', parameters('storageName'), 'default', parameters('fileSystemNames')[copyIndex()])]"
+                }
+              }
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "sqlDeploy",
+      "resourceGroup": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "sqlLogin": {
+            "value": "[parameters('sqlLogin')]"
+          },
+          "sqlserverName": {
+            "value": "[variables('sqlserverName')]"
+          },
+          "sqlPassword": {
+            "value": "[parameters('sqlPassword')]"
+          },
+          "sqlserverAdminUser": {
+            "value": "[parameters('sqlserverAdminUser')]"
+          },
+          "sqlserverAdminUserObjectID": {
+            "value": "[parameters('sqlserverAdminUserObjectID')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "16109866789017247606"
+            }
+          },
+          "parameters": {
+            "sqlserverName": {
+              "type": "string"
+            },
+            "sqldbName": {
+              "type": "string",
+              "defaultValue": "AdventureWorksLT"
+            },
+            "sqlLogin": {
+              "type": "string"
+            },
+            "sqlPassword": {
+              "type": "secureString"
+            },
+            "tags": {
+              "type": "object"
+            },
+            "sqlserverAdminUserObjectID": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sqlserverAdminUser": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "variables": {
+            "location": "[resourceGroup().location]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Sql/servers",
+              "apiVersion": "2021-05-01-preview",
+              "name": "[parameters('sqlserverName')]",
+              "location": "[variables('location')]",
+              "properties": {
+                "administratorLogin": "[parameters('sqlLogin')]",
+                "administratorLoginPassword": "[parameters('sqlPassword')]",
+                "publicNetworkAccess": "Enabled"
+              },
+              "tags": "[parameters('tags')]"
+            },
+            {
+              "condition": "[and(not(empty(parameters('sqlserverAdminUser'))), not(empty(parameters('sqlserverAdminUserObjectID'))))]",
+              "type": "Microsoft.Sql/servers/administrators",
+              "apiVersion": "2020-11-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlserverName'), 'ActiveDirectory')]",
+              "properties": {
+                "administratorType": "ActiveDirectory",
+                "login": "[parameters('sqlserverAdminUser')]",
+                "sid": "[parameters('sqlserverAdminUserObjectID')]",
+                "tenantId": "[subscription().tenantId]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlserverName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/firewallRules",
+              "apiVersion": "2021-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlserverName'), 'AllowAllWindowsAzureIps')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlserverName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/firewallRules",
+              "apiVersion": "2021-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlserverName'), 'AllowAll')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "255.255.255.255"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlserverName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2021-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlserverName'), parameters('sqldbName'))]",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Basic",
+                "tier": "Basic",
+                "capacity": 5
+              },
+              "properties": {
+                "collation": "SQL_Latin1_General_CP1_CI_AS",
+                "sampleName": "AdventureWorksLT"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlserverName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2021-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('sqlserverName'), 'pipeline_meta')]",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Basic",
+                "tier": "Basic",
+                "capacity": 5
+              },
+              "properties": {
+                "collation": "SQL_Latin1_General_CP1_CI_AS"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlserverName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "sqlserverName": {
+              "type": "string",
+              "value": "[parameters('sqlserverName')]"
+            },
+            "sqlId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Sql/servers', parameters('sqlserverName'))]"
+            },
+            "metaSqlDatabaseName": {
+              "type": "string",
+              "value": "pipeline_meta"
+            },
+            "targetSqlDatabaseName": {
+              "type": "string",
+              "value": "[parameters('sqldbName')]"
+            },
+            "sqlserverHostName": {
+              "type": "string",
+              "value": "[format('{0}{1}', parameters('sqlserverName'), environment().suffixes.sqlServerHostname)]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "synapseToStorageRBAC",
+      "resourceGroup": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "storageAccountFileSystemId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'storageDeploy'), '2020-10-01').outputs.storageFileSystemIds.value[0].storageFileSystemId]"
+          },
+          "adfId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'datafactoryDeployment'), '2020-10-01').outputs.datafactoryId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "7437700557883988839"
+            }
+          },
+          "parameters": {
+            "storageAccountFileSystemId": {
+              "type": "string"
+            },
+            "adfId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "storageAccountName": "[if(greaterOrEquals(length(split(parameters('storageAccountFileSystemId'), '/')), 13), split(parameters('storageAccountFileSystemId'), '/')[8], 'incorrectSegmentLength')]",
+            "adfSubscriptionId": "[if(greaterOrEquals(length(split(parameters('adfId'), '/')), 9), split(parameters('adfId'), '/')[2], subscription().subscriptionId)]",
+            "adfResourceGroupName": "[if(greaterOrEquals(length(split(parameters('adfId'), '/')), 9), split(parameters('adfId'), '/')[4], resourceGroup().name)]",
+            "adfName": "[if(greaterOrEquals(length(split(parameters('adfId'), '/')), 9), last(split(parameters('adfId'), '/')), 'incorrectSegmentLength')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2020-04-01-preview",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', format('{0}', variables('storageAccountName')))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', format('{0}', variables('storageAccountName'))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('adfSubscriptionId'), variables('adfResourceGroupName')), 'Microsoft.DataFactory/factories', variables('adfName')), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+              "properties": {
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+                "principalId": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('adfSubscriptionId'), variables('adfResourceGroupName')), 'Microsoft.DataFactory/factories', variables('adfName')), '2018-06-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'datafactoryDeployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'storageDeploy')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "purviewDeployment",
+      "resourceGroup": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          },
+          "purviewName": {
+            "value": "[variables('purviewName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "9199733748602755437"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object"
+            },
+            "purviewName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Purview/accounts",
+              "apiVersion": "2021-07-01",
+              "name": "[parameters('purviewName')]",
+              "location": "southeastasia",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "publicNetworkAccess": "Enabled",
+                "managedResourceGroupName": "[format('mngrg-{0}', parameters('purviewName'))]"
+              },
+              "tags": "[parameters('tags')]"
+            }
+          ],
+          "outputs": {
+            "purviewId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Purview/accounts', parameters('purviewName'))]"
+            },
+            "purviewManagedStorageId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Purview/accounts', parameters('purviewName'))).managedResources.storageAccount]"
+            },
+            "purviewManagedEventHubId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Purview/accounts', parameters('purviewName'))).managedResources.eventHubNamespace]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "datafactoryDeployment",
+      "resourceGroup": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "datafactoryName": {
+            "value": "[variables('datafactoryName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sqlDatabase001Name": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy'), '2020-10-01').outputs.metaSqlDatabaseName.value]"
+          },
+          "sqlServer001Id": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy'), '2020-10-01').outputs.sqlId.value]"
+          },
+          "sqlDatabase002Name": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy'), '2020-10-01').outputs.targetSqlDatabaseName.value]"
+          },
+          "sqlServer002Id": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy'), '2020-10-01').outputs.sqlId.value]"
+          },
+          "storageId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'storageDeploy'), '2020-10-01').outputs.storageId.value]"
+          },
+          "purviewId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'purviewDeployment'), '2020-10-01').outputs.purviewId.value]"
+          },
+          "tags": {
+            "value": "[variables('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "5321570288173131070"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object"
+            },
+            "datafactoryName": {
+              "type": "string"
+            },
+            "purviewId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "storageId": {
+              "type": "string"
+            },
+            "sqlServer001Id": {
+              "type": "string"
+            },
+            "sqlDatabase001Name": {
+              "type": "string"
+            },
+            "sqlServer002Id": {
+              "type": "string"
+            },
+            "sqlDatabase002Name": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "storageName": "[if(greaterOrEquals(length(split(parameters('storageId'), '/')), 9), last(split(parameters('storageId'), '/')), 'incorrectSegmentLength')]",
+            "sqlServer001Name": "[if(greaterOrEquals(length(split(parameters('sqlServer001Id'), '/')), 9), last(split(parameters('sqlServer001Id'), '/')), 'incorrectSegmentLength')]",
+            "sqlServer002Name": "[if(greaterOrEquals(length(split(parameters('sqlServer002Id'), '/')), 9), last(split(parameters('sqlServer002Id'), '/')), 'incorrectSegmentLength')]",
+            "purviewAccountName": "[if(greaterOrEquals(length(split(parameters('purviewId'), '/')), 9), last(split(parameters('purviewId'), '/')), 'incorrectSegmentLength')]",
+            "datafactoryDefaultIntegrationRuntimeName": "AutoResolveIntegrationRuntime"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DataFactory/factories",
+              "apiVersion": "2018-06-01",
+              "name": "[parameters('datafactoryName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "globalParameters": {},
+                "purviewConfiguration": {
+                  "purviewResourceId": "[parameters('purviewId')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), variables('datafactoryDefaultIntegrationRuntimeName'))]",
+              "properties": {
+                "type": "Managed",
+                "typeProperties": {
+                  "computeProperties": {
+                    "location": "AutoResolve"
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/linkedservices",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), format('{0}', replace(parameters('sqlDatabase001Name'), '-', '')))]",
+              "properties": {
+                "type": "AzureSqlDatabase",
+                "annotations": [],
+                "connectVia": {
+                  "type": "IntegrationRuntimeReference",
+                  "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                  "parameters": {}
+                },
+                "description": "Sql Database for storing metadata",
+                "parameters": {},
+                "typeProperties": {
+                  "connectionString": "[format('Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source={0}{1};Initial Catalog={2}', variables('sqlServer001Name'), environment().suffixes.sqlServerHostname, parameters('sqlDatabase001Name'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/integrationRuntimes', parameters('datafactoryName'), variables('datafactoryDefaultIntegrationRuntimeName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/linkedservices",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), format('{0}', replace(parameters('sqlDatabase002Name'), '-', '')))]",
+              "properties": {
+                "type": "AzureSqlDatabase",
+                "annotations": [],
+                "connectVia": {
+                  "type": "IntegrationRuntimeReference",
+                  "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                  "parameters": {}
+                },
+                "description": "Sql Database for storing metadata",
+                "parameters": {},
+                "typeProperties": {
+                  "connectionString": "[format('Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source={0}{1};Initial Catalog={2}', variables('sqlServer002Name'), environment().suffixes.sqlServerHostname, parameters('sqlDatabase002Name'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/integrationRuntimes', parameters('datafactoryName'), variables('datafactoryDefaultIntegrationRuntimeName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/linkedservices",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'ingestStorage')]",
+              "properties": {
+                "type": "AzureBlobFS",
+                "annotations": [],
+                "connectVia": {
+                  "type": "IntegrationRuntimeReference",
+                  "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                  "parameters": {}
+                },
+                "description": "Storage Account for raw data",
+                "parameters": {},
+                "typeProperties": {
+                  "url": "[format('https://{0}.dfs.{1}', variables('storageName'), environment().suffixes.storage)]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/integrationRuntimes', parameters('datafactoryName'), variables('datafactoryDefaultIntegrationRuntimeName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/linkedservices",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'purvuewRest')]",
+              "properties": {
+                "type": "HttpServer",
+                "annotations": [],
+                "connectVia": {
+                  "type": "IntegrationRuntimeReference",
+                  "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                  "parameters": {}
+                },
+                "description": "Purview Basic REST Endpoint",
+                "parameters": {},
+                "typeProperties": {
+                  "url": "[format('https://{0}.purview.azure.com/', variables('purviewAccountName'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/integrationRuntimes', parameters('datafactoryName'), variables('datafactoryDefaultIntegrationRuntimeName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/datasets",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_ControlDS')]",
+              "properties": {
+                "type": "AzureSqlTable",
+                "linkedServiceName": {
+                  "referenceName": "[format('{0}', replace(parameters('sqlDatabase001Name'), '-', ''))]",
+                  "type": "LinkedServiceReference"
+                },
+                "folder": {
+                  "name": "MetadataDrivenCopyTask_0mc"
+                },
+                "typeProperties": {
+                  "schema": "dbo",
+                  "table": "MainControlTable"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/linkedservices', parameters('datafactoryName'), format('{0}', replace(parameters('sqlDatabase001Name'), '-', '')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/datasets",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_DestinationDS')]",
+              "properties": {
+                "type": "DelimitedText",
+                "linkedServiceName": {
+                  "referenceName": "ingestStorage",
+                  "type": "LinkedServiceReference"
+                },
+                "folder": {
+                  "name": "MetadataDrivenCopyTask_0mc"
+                },
+                "parameters": {
+                  "cw_fileName": {
+                    "type": "String"
+                  },
+                  "cw_folderPath": {
+                    "type": "String"
+                  },
+                  "cw_fileSystem": {
+                    "type": "String"
+                  }
+                },
+                "typeProperties": {
+                  "columnDelimiter": ",",
+                  "firstRowAsHeader": true,
+                  "location": {
+                    "type": "AzureBlobFSLocation",
+                    "fileName": {
+                      "value": "@dataset().cw_fileName",
+                      "type": "Expression"
+                    },
+                    "folderPath": {
+                      "value": "@dataset().cw_folderPath",
+                      "type": "Expression"
+                    },
+                    "fileSystem": {
+                      "value": "@dataset().cw_fileSystem",
+                      "type": "Expression"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/linkedservices', parameters('datafactoryName'), 'ingestStorage')]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/datasets",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_SourceDS')]",
+              "properties": {
+                "type": "AzureSqlTable",
+                "linkedServiceName": {
+                  "referenceName": "[format('{0}', replace(parameters('sqlDatabase002Name'), '-', ''))]",
+                  "type": "LinkedServiceReference"
+                },
+                "folder": {
+                  "name": "MetadataDrivenCopyTask_0mc"
+                },
+                "parameters": {
+                  "cw_schema": {
+                    "type": "String"
+                  },
+                  "cw_table": {
+                    "type": "String"
+                  }
+                },
+                "typeProperties": {
+                  "schema": {
+                    "value": "@dataset().cw_schema",
+                    "type": "Expression"
+                  },
+                  "table": {
+                    "value": "@dataset().cw_table",
+                    "type": "Expression"
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/linkedservices', parameters('datafactoryName'), format('{0}', replace(parameters('sqlDatabase002Name'), '-', '')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/pipelines",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'InsertFromPurviewMetadataomc2')]",
+              "properties": {
+                "activities": [
+                  {
+                    "name": "Query Ingest Target",
+                    "type": "WebActivity",
+                    "dependsOn": [
+                      {
+                        "activity": "Set Query_Body",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "url": {
+                        "value": "@variables('QueryURL')",
+                        "type": "Expression"
+                      },
+                      "connectVia": {
+                        "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                        "type": "IntegrationRuntimeReference"
+                      },
+                      "method": "POST",
+                      "headers": {},
+                      "body": {
+                        "value": "@variables('QueryBody')",
+                        "type": "Expression"
+                      },
+                      "authentication": {
+                        "type": "MSI",
+                        "resource": "https://purview.azure.net"
+                      }
+                    }
+                  },
+                  {
+                    "name": "Set Query_Body",
+                    "type": "SetVariable",
+                    "dependsOn": [
+                      {
+                        "activity": "Set Get_QueryUrl",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "variableName": "QueryBody",
+                      "value": {
+                        "value": "{\n    \"keywords\": null,\n    \"limit\": 10,\n    \"filter\": {\n        \"classification\": @{pipeline().parameters.MetadataDrivenCopyTaskTopName},\n        \"includeSubClassifications\": false\n    }\n\n}",
+                        "type": "Expression"
+                      }
+                    }
+                  },
+                  {
+                    "name": "Set Get_QueryUrl",
+                    "type": "SetVariable",
+                    "dependsOn": [
+                      {
+                        "activity": "Delete Metadata",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "variableName": "QueryURL",
+                      "value": {
+                        "value": "@concat('https://',pipeline().parameters.purviewName,'.purview.azure.com/catalog/api/search/query?api-version=2021-05-01-preview')",
+                        "type": "Expression"
+                      }
+                    }
+                  },
+                  {
+                    "name": "ForEach1",
+                    "type": "ForEach",
+                    "dependsOn": [
+                      {
+                        "activity": "Query Ingest Target",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "items": {
+                        "value": "@activity('Query Ingest Target').output.value",
+                        "type": "Expression"
+                      },
+                      "activities": [
+                        {
+                          "name": "Get_Entity",
+                          "type": "WebActivity",
+                          "dependsOn": [],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "url": {
+                              "value": "@concat('https://',pipeline().parameters.purviewName,'.purview.azure.com/catalog/api/atlas/v2/entity/guid/',item().id,'?api-version=2021-05-01-preview')",
+                              "type": "Expression"
+                            },
+                            "connectVia": {
+                              "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                              "type": "IntegrationRuntimeReference"
+                            },
+                            "method": "GET",
+                            "headers": {},
+                            "authentication": {
+                              "type": "MSI",
+                              "resource": "https://purview.azure.net"
+                            }
+                          }
+                        },
+                        {
+                          "name": "Get_Schema_Entity",
+                          "type": "WebActivity",
+                          "dependsOn": [
+                            {
+                              "activity": "Get_Entity",
+                              "dependencyConditions": [
+                                "Succeeded"
+                              ]
+                            }
+                          ],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "url": {
+                              "value": "@concat('https://',pipeline().parameters.purviewName,'.purview.azure.com/catalog/api/atlas/v2/entity/guid/',activity('Get_Entity').output.entity.relationshipAttributes.dbSchema.guid,'?api-version=2021-05-01-preview')",
+                              "type": "Expression"
+                            },
+                            "connectVia": {
+                              "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                              "type": "IntegrationRuntimeReference"
+                            },
+                            "method": "GET",
+                            "headers": {},
+                            "authentication": {
+                              "type": "MSI",
+                              "resource": "https://purview.azure.net"
+                            }
+                          }
+                        },
+                        {
+                          "name": "Get_db_Entity",
+                          "type": "WebActivity",
+                          "dependsOn": [
+                            {
+                              "activity": "Get_Schema_Entity",
+                              "dependencyConditions": [
+                                "Succeeded"
+                              ]
+                            }
+                          ],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "url": {
+                              "value": "@concat('https://',pipeline().parameters.purviewName,'.purview.azure.com/catalog/api/atlas/v2/entity/guid/',activity('Get_Schema_Entity').output.entity.relationshipAttributes.db.guid,'?api-version=2021-05-01-preview')",
+                              "type": "Expression"
+                            },
+                            "connectVia": {
+                              "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                              "type": "IntegrationRuntimeReference"
+                            },
+                            "method": "GET",
+                            "headers": {},
+                            "authentication": {
+                              "type": "MSI",
+                              "resource": "https://purview.azure.net"
+                            }
+                          }
+                        },
+                        {
+                          "name": "Get_Server_Entity",
+                          "type": "WebActivity",
+                          "dependsOn": [
+                            {
+                              "activity": "Get_db_Entity",
+                              "dependencyConditions": [
+                                "Succeeded"
+                              ]
+                            }
+                          ],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "url": {
+                              "value": "@concat('https://',pipeline().parameters.purviewName,'.purview.azure.com/catalog/api/atlas/v2/entity/guid/',activity('Get_db_Entity').output.entity.relationshipAttributes.server.guid,'?api-version=2021-05-01-preview')",
+                              "type": "Expression"
+                            },
+                            "connectVia": {
+                              "referenceName": "[variables('datafactoryDefaultIntegrationRuntimeName')]",
+                              "type": "IntegrationRuntimeReference"
+                            },
+                            "method": "GET",
+                            "headers": {},
+                            "authentication": {
+                              "type": "MSI",
+                              "resource": "https://purview.azure.net"
+                            }
+                          }
+                        },
+                        {
+                          "name": "Insert Metadata",
+                          "type": "SqlServerStoredProcedure",
+                          "dependsOn": [
+                            {
+                              "activity": "Get_Server_Entity",
+                              "dependencyConditions": [
+                                "Succeeded"
+                              ]
+                            }
+                          ],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "storedProcedureName": "[[dbo].[usp_insert_metadata]",
+                            "storedProcedureParameters": {
+                              "databaseName": {
+                                "value": {
+                                  "value": "@activity('Get_db_Entity').output.entity.attributes.name",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "fileSystemName": {
+                                "value": {
+                                  "value": "@pipeline().parameters.fileSystemName",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "rootFolderPath": {
+                                "value": {
+                                  "value": "@pipeline().parameters.rootFolderPath",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "schemaName": {
+                                "value": {
+                                  "value": "@activity('Get_Schema_Entity').output.entity.attributes.name",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "serverName": {
+                                "value": {
+                                  "value": "@activity('Get_Server_Entity').output.entity.attributes.name",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "tableName": {
+                                "value": {
+                                  "value": "@activity('Get_Entity').output.entity.attributes.name",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "topLevelPipelineName": {
+                                "value": {
+                                  "value": "@pipeline().parameters.MetadataDrivenCopyTaskTopName",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              },
+                              "metadataControleTable": {
+                                "value": {
+                                  "value": "@pipeline().parameters.MainControlTableName",
+                                  "type": "Expression"
+                                },
+                                "type": "String"
+                              }
+                            }
+                          },
+                          "linkedServiceName": {
+                            "referenceName": "[format('{0}', replace(parameters('sqlDatabase001Name'), '-', ''))]",
+                            "type": "LinkedServiceReference"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "Delete Metadata",
+                    "type": "SqlServerStoredProcedure",
+                    "dependsOn": [],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "storedProcedureName": "[[dbo].[usp_delete_metadata]",
+                      "storedProcedureParameters": {
+                        "metadataControleTable": {
+                          "value": {
+                            "value": "@pipeline().parameters.MainControlTableName",
+                            "type": "Expression"
+                          },
+                          "type": "String"
+                        },
+                        "MetadataDrivenCopyTaskTopName": {
+                          "value": {
+                            "value": "@pipeline().parameters.MetadataDrivenCopyTaskTopName",
+                            "type": "Expression"
+                          },
+                          "type": "String"
+                        }
+                      }
+                    },
+                    "linkedServiceName": {
+                      "referenceName": "[format('{0}', replace(parameters('sqlDatabase001Name'), '-', ''))]",
+                      "type": "LinkedServiceReference"
+                    }
+                  }
+                ],
+                "parameters": {
+                  "purviewName": {
+                    "type": "String"
+                  },
+                  "MetadataDrivenCopyTaskTopName": {
+                    "type": "String",
+                    "defaultValue": "MetadataDrivenCopyTask_0mc_TopLevel"
+                  },
+                  "MainControlTableName": {
+                    "type": "String",
+                    "defaultValue": "MainControlTable"
+                  },
+                  "rootFolderPath": {
+                    "type": "String",
+                    "defaultValue": "landing"
+                  },
+                  "fileSystemName": {
+                    "type": "String",
+                    "defaultValue": "data"
+                  }
+                },
+                "variables": {
+                  "QueryURL": {
+                    "type": "String"
+                  },
+                  "QueryBody": {
+                    "type": "String"
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/integrationRuntimes', parameters('datafactoryName'), variables('datafactoryDefaultIntegrationRuntimeName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/linkedservices', parameters('datafactoryName'), format('{0}', replace(parameters('sqlDatabase001Name'), '-', '')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/pipelines",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_BottomLevel')]",
+              "properties": {
+                "description": "This pipeline will copy objects from one group. The objects belonging to this group will be copied parallelly.",
+                "activities": [
+                  {
+                    "name": "ListObjectsFromOneGroup",
+                    "description": "List objects from one group and iterate each of them to downstream activities",
+                    "type": "ForEach",
+                    "dependsOn": [],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "items": {
+                        "value": "@pipeline().parameters.ObjectsPerGroupToCopy",
+                        "type": "Expression"
+                      },
+                      "activities": [
+                        {
+                          "name": "RouteJobsBasedOnLoadingBehavior",
+                          "description": "Check the loading behavior for each object if it requires full load or incremental load. If it is Default or FullLoad case, do full load. If it is DeltaLoad case, do incremental load via watermark column to identify changes.",
+                          "type": "Switch",
+                          "dependsOn": [],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "on": {
+                              "value": "@json(item().DataLoadingBehaviorSettings).dataLoadingBehavior",
+                              "type": "Expression"
+                            },
+                            "cases": [
+                              {
+                                "value": "FullLoad",
+                                "activities": [
+                                  {
+                                    "name": "FullLoadOneObject",
+                                    "description": "Take a full snapshot on this object and copy it to the destination",
+                                    "type": "Copy",
+                                    "dependsOn": [],
+                                    "userProperties": [
+                                      {
+                                        "name": "Source",
+                                        "value": "@{json(item().SourceObjectSettings).schema}.@{json(item().SourceObjectSettings).table}"
+                                      },
+                                      {
+                                        "name": "Destination",
+                                        "value": "@{json(item().SinkObjectSettings).fileSystem}/landing/@{formatDateTime(pipeline().TriggerTime,'yyyy')}-@{formatDateTime(pipeline().TriggerTime,'MM')}-@{formatDateTime(pipeline().TriggerTime,'dd')}/@{json(item().SinkObjectSettings).fileName}"
+                                      }
+                                    ],
+                                    "typeProperties": {
+                                      "source": {
+                                        "type": "AzureSqlSource",
+                                        "sqlReaderQuery": {
+                                          "value": "@json(item().CopySourceSettings).sqlReaderQuery",
+                                          "type": "Expression"
+                                        },
+                                        "partitionOption": {
+                                          "value": "@json(item().CopySourceSettings).partitionOption",
+                                          "type": "Expression"
+                                        },
+                                        "partitionSettings": {
+                                          "partitionColumnName": {
+                                            "value": "@json(item().CopySourceSettings).partitionColumnName",
+                                            "type": "Expression"
+                                          },
+                                          "partitionUpperBound": {
+                                            "value": "@json(item().CopySourceSettings).partitionUpperBound",
+                                            "type": "Expression"
+                                          },
+                                          "partitionLowerBound": {
+                                            "value": "@json(item().CopySourceSettings).partitionLowerBound",
+                                            "type": "Expression"
+                                          },
+                                          "partitionNames": "@json(item().CopySourceSettings).partitionNames"
+                                        }
+                                      },
+                                      "sink": {
+                                        "type": "DelimitedTextSink",
+                                        "storeSettings": {
+                                          "type": "AzureBlobFSWriteSettings"
+                                        },
+                                        "formatSettings": {
+                                          "type": "DelimitedTextWriteSettings",
+                                          "quoteAllText": true,
+                                          "fileExtension": ".txt"
+                                        }
+                                      },
+                                      "enableStaging": false,
+                                      "validateDataConsistency": false,
+                                      "translator": {
+                                        "value": "@json(item().CopyActivitySettings).translator",
+                                        "type": "Expression"
+                                      }
+                                    },
+                                    "inputs": [
+                                      {
+                                        "referenceName": "MetadataDrivenCopyTask_0mc_SourceDS",
+                                        "type": "DatasetReference",
+                                        "parameters": {
+                                          "cw_schema": {
+                                            "value": "@json(item().SourceObjectSettings).schema",
+                                            "type": "Expression"
+                                          },
+                                          "cw_table": {
+                                            "value": "@json(item().SourceObjectSettings).table",
+                                            "type": "Expression"
+                                          }
+                                        }
+                                      }
+                                    ],
+                                    "outputs": [
+                                      {
+                                        "referenceName": "MetadataDrivenCopyTask_0mc_DestinationDS",
+                                        "type": "DatasetReference",
+                                        "parameters": {
+                                          "cw_fileName": {
+                                            "value": "@json(item().SinkObjectSettings).fileName",
+                                            "type": "Expression"
+                                          },
+                                          "cw_folderPath": {
+                                            "value": "@{json(item().SinkObjectSettings).folderPath}/@{formatDateTime(pipeline().TriggerTime,'yyyy')}-@{formatDateTime(pipeline().TriggerTime,'MM')}-@{formatDateTime(pipeline().TriggerTime,'dd')}",
+                                            "type": "Expression"
+                                          },
+                                          "cw_fileSystem": {
+                                            "value": "@json(item().SinkObjectSettings).fileSystem",
+                                            "type": "Expression"
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "value": "DeltaLoad",
+                                "activities": [
+                                  {
+                                    "name": "GetMaxWatermarkValue",
+                                    "description": "Query the source object to get the max value from watermark column",
+                                    "type": "Lookup",
+                                    "dependsOn": [],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                      "source": {
+                                        "type": "AzureSqlSource",
+                                        "sqlReaderQuery": {
+                                          "value": "select max(@{json(item().DataLoadingBehaviorSettings).watermarkColumnName}) as CurrentMaxWaterMarkColumnValue from [@{json(item().SourceObjectSettings).schema}].[@{json(item().SourceObjectSettings).table}]",
+                                          "type": "Expression"
+                                        },
+                                        "partitionOption": "None"
+                                      },
+                                      "dataset": {
+                                        "referenceName": "MetadataDrivenCopyTask_0mc_SourceDS",
+                                        "type": "DatasetReference",
+                                        "parameters": {
+                                          "cw_schema": {
+                                            "value": "@json(item().SourceObjectSettings).schema",
+                                            "type": "Expression"
+                                          },
+                                          "cw_table": {
+                                            "value": "@json(item().SourceObjectSettings).table",
+                                            "type": "Expression"
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "name": "SetWatermarkValueQuoteChar",
+                                    "type": "SetVariable",
+                                    "dependsOn": [
+                                      {
+                                        "activity": "GetMaxWatermarkValue",
+                                        "dependencyConditions": [
+                                          "Succeeded"
+                                        ]
+                                      }
+                                    ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                      "variableName": "WatermarkValueQuoteChar",
+                                      "value": {
+                                        "value": "@if(contains(json(item().DataLoadingBehaviorSettings).watermarkColumnType, 'Int'), '','''')",
+                                        "type": "Expression"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "name": "DeltaLoadOneObject",
+                                    "description": "Copy the changed data only from last time via comparing the value in watermark column to identify changes.",
+                                    "type": "Copy",
+                                    "dependsOn": [
+                                      {
+                                        "activity": "SetWatermarkValueQuoteChar",
+                                        "dependencyConditions": [
+                                          "Succeeded"
+                                        ]
+                                      }
+                                    ],
+                                    "userProperties": [
+                                      {
+                                        "name": "Source",
+                                        "value": "@{json(item().SourceObjectSettings).schema}.@{json(item().SourceObjectSettings).table}"
+                                      },
+                                      {
+                                        "name": "Destination",
+                                        "value": "@{json(item().SinkObjectSettings).fileSystem}/landing/@{formatDateTime(pipeline().TriggerTime,'yyyy')}-@{formatDateTime(pipeline().TriggerTime,'MM')}-@{formatDateTime(pipeline().TriggerTime,'dd')}/@{json(item().SinkObjectSettings).fileName}"
+                                      }
+                                    ],
+                                    "typeProperties": {
+                                      "source": {
+                                        "type": "AzureSqlSource",
+                                        "sqlReaderQuery": {
+                                          "value": "select * from [@{json(item().SourceObjectSettings).schema}].[@{json(item().SourceObjectSettings).table}]\n                    where @{json(item().DataLoadingBehaviorSettings).watermarkColumnName}\n                    > @{variables('WatermarkValueQuoteChar')}@{json(item().DataLoadingBehaviorSettings).watermarkColumnStartValue}@{variables('WatermarkValueQuoteChar')}\n                    and @{json(item().DataLoadingBehaviorSettings).watermarkColumnName}\n                    <= @{variables('WatermarkValueQuoteChar')}@{activity('GetMaxWatermarkValue').output.firstRow.CurrentMaxWaterMarkColumnValue}@{variables('WatermarkValueQuoteChar')}",
+                                          "type": "Expression"
+                                        },
+                                        "partitionOption": {
+                                          "value": "@json(item().CopySourceSettings).partitionOption",
+                                          "type": "Expression"
+                                        },
+                                        "partitionSettings": {
+                                          "partitionColumnName": {
+                                            "value": "@json(item().CopySourceSettings).partitionColumnName",
+                                            "type": "Expression"
+                                          },
+                                          "partitionUpperBound": {
+                                            "value": "@json(item().CopySourceSettings).partitionUpperBound",
+                                            "type": "Expression"
+                                          },
+                                          "partitionLowerBound": {
+                                            "value": "@json(item().CopySourceSettings).partitionLowerBound",
+                                            "type": "Expression"
+                                          },
+                                          "partitionNames": "@json(item().CopySourceSettings).partitionNames"
+                                        }
+                                      },
+                                      "sink": {
+                                        "type": "DelimitedTextSink",
+                                        "storeSettings": {
+                                          "type": "AzureBlobFSWriteSettings"
+                                        },
+                                        "formatSettings": {
+                                          "type": "DelimitedTextWriteSettings",
+                                          "quoteAllText": true,
+                                          "fileExtension": ".txt"
+                                        }
+                                      },
+                                      "enableStaging": false,
+                                      "validateDataConsistency": false,
+                                      "translator": {
+                                        "value": "@json(item().CopyActivitySettings).translator",
+                                        "type": "Expression"
+                                      }
+                                    },
+                                    "inputs": [
+                                      {
+                                        "referenceName": "MetadataDrivenCopyTask_0mc_SourceDS",
+                                        "type": "DatasetReference",
+                                        "parameters": {
+                                          "cw_schema": {
+                                            "value": "@json(item().SourceObjectSettings).schema",
+                                            "type": "Expression"
+                                          },
+                                          "cw_table": {
+                                            "value": "@json(item().SourceObjectSettings).table",
+                                            "type": "Expression"
+                                          }
+                                        }
+                                      }
+                                    ],
+                                    "outputs": [
+                                      {
+                                        "referenceName": "MetadataDrivenCopyTask_0mc_DestinationDS",
+                                        "type": "DatasetReference",
+                                        "parameters": {
+                                          "cw_fileName": {
+                                            "value": "@{json(item().SinkObjectSettings).fileName}-@{json(item().DataLoadingBehaviorSettings).watermarkColumnStartValue}-@{activity('GetMaxWatermarkValue').output.firstRow.CurrentMaxWaterMarkColumnValue}",
+                                            "type": "Expression"
+                                          },
+                                          "cw_folderPath": {
+                                            "value": "landing/@{formatDateTime(pipeline().TriggerTime,'yyyy')}-@{formatDateTime(pipeline().TriggerTime,'MM')}-@{formatDateTime(pipeline().TriggerTime,'dd')}",
+                                            "type": "Expression"
+                                          },
+                                          "cw_fileSystem": {
+                                            "value": "@json(item().SinkObjectSettings).fileSystem",
+                                            "type": "Expression"
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "name": "UpdateWatermarkColumnValue",
+                                    "type": "SqlServerStoredProcedure",
+                                    "dependsOn": [
+                                      {
+                                        "activity": "DeltaLoadOneObject",
+                                        "dependencyConditions": [
+                                          "Succeeded"
+                                        ]
+                                      }
+                                    ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                      "storedProcedureName": "[[dbo].[UpdateWatermarkColumnValue_0mc]",
+                                      "storedProcedureParameters": {
+                                        "Id": {
+                                          "value": {
+                                            "value": "@item().Id",
+                                            "type": "Expression"
+                                          },
+                                          "type": "Int"
+                                        },
+                                        "watermarkColumnStartValue": {
+                                          "value": {
+                                            "value": "@activity('GetMaxWatermarkValue').output.firstRow.CurrentMaxWaterMarkColumnValue",
+                                            "type": "Expression"
+                                          },
+                                          "type": "String"
+                                        }
+                                      }
+                                    },
+                                    "linkedServiceName": {
+                                      "referenceName": "[format('{0}', replace(parameters('sqlDatabase001Name'), '-', ''))]",
+                                      "type": "LinkedServiceReference"
+                                    }
+                                  }
+                                ]
+                              }
+                            ],
+                            "defaultActivities": [
+                              {
+                                "name": "DefaultFullLoadOneObject",
+                                "description": "Take a full snapshot on this object and copy it to the destination",
+                                "type": "Copy",
+                                "dependsOn": [],
+                                "userProperties": [
+                                  {
+                                    "name": "Source",
+                                    "value": "@{json(item().SourceObjectSettings).schema}.@{json(item().SourceObjectSettings).table}"
+                                  },
+                                  {
+                                    "name": "Destination",
+                                    "value": "@{json(item().SinkObjectSettings).fileSystem}/landing/@{formatDateTime(pipeline().TriggerTime,'yyyy')}-@{formatDateTime(pipeline().TriggerTime,'MM')}-@{formatDateTime(pipeline().TriggerTime,'dd')}/@{json(item().SinkObjectSettings).fileName}"
+                                  }
+                                ],
+                                "typeProperties": {
+                                  "source": {
+                                    "type": "AzureSqlSource",
+                                    "sqlReaderQuery": {
+                                      "value": "@json(item().CopySourceSettings).sqlReaderQuery",
+                                      "type": "Expression"
+                                    },
+                                    "partitionOption": {
+                                      "value": "@json(item().CopySourceSettings).partitionOption",
+                                      "type": "Expression"
+                                    },
+                                    "partitionSettings": {
+                                      "partitionColumnName": {
+                                        "value": "@json(item().CopySourceSettings).partitionColumnName",
+                                        "type": "Expression"
+                                      },
+                                      "partitionUpperBound": {
+                                        "value": "@json(item().CopySourceSettings).partitionUpperBound",
+                                        "type": "Expression"
+                                      },
+                                      "partitionLowerBound": {
+                                        "value": "@json(item().CopySourceSettings).partitionLowerBound",
+                                        "type": "Expression"
+                                      },
+                                      "partitionNames": "@json(item().CopySourceSettings).partitionNames"
+                                    }
+                                  },
+                                  "sink": {
+                                    "type": "DelimitedTextSink",
+                                    "storeSettings": {
+                                      "type": "AzureBlobFSWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                      "type": "DelimitedTextWriteSettings",
+                                      "quoteAllText": true,
+                                      "fileExtension": ".txt"
+                                    }
+                                  },
+                                  "enableStaging": false,
+                                  "validateDataConsistency": false,
+                                  "translator": {
+                                    "value": "@json(item().CopyActivitySettings).translator",
+                                    "type": "Expression"
+                                  }
+                                },
+                                "inputs": [
+                                  {
+                                    "referenceName": "MetadataDrivenCopyTask_0mc_SourceDS",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                      "cw_schema": {
+                                        "value": "@json(item().SourceObjectSettings).schema",
+                                        "type": "Expression"
+                                      },
+                                      "cw_table": {
+                                        "value": "@json(item().SourceObjectSettings).table",
+                                        "type": "Expression"
+                                      }
+                                    }
+                                  }
+                                ],
+                                "outputs": [
+                                  {
+                                    "referenceName": "MetadataDrivenCopyTask_0mc_DestinationDS",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                      "cw_fileName": {
+                                        "value": "@json(item().SinkObjectSettings).fileName",
+                                        "type": "Expression"
+                                      },
+                                      "cw_folderPath": {
+                                        "value": "landing/@{formatDateTime(pipeline().TriggerTime,'yyyy')}-@{formatDateTime(pipeline().TriggerTime,'MM')}-@{formatDateTime(pipeline().TriggerTime,'dd')}",
+                                        "type": "Expression"
+                                      },
+                                      "cw_fileSystem": {
+                                        "value": "@json(item().SinkObjectSettings).fileSystem",
+                                        "type": "Expression"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "policy": {
+                  "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                  "ObjectsPerGroupToCopy": {
+                    "type": "Array"
+                  },
+                  "windowStart": {
+                    "type": "String"
+                  }
+                },
+                "variables": {
+                  "WatermarkValueQuoteChar": {
+                    "type": "String"
+                  }
+                },
+                "folder": {
+                  "name": "MetadataDrivenCopyTask_0mc"
+                },
+                "annotations": []
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/datasets', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_DestinationDS')]",
+                "[resourceId('Microsoft.DataFactory/factories/datasets', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_SourceDS')]",
+                "[resourceId('Microsoft.DataFactory/factories/linkedservices', parameters('datafactoryName'), format('{0}', replace(parameters('sqlDatabase001Name'), '-', '')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/pipelines",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_MiddleLevel')]",
+              "properties": {
+                "description": "This pipeline will copy one batch of objects. The objects belonging to this batch will be copied parallelly.",
+                "activities": [
+                  {
+                    "name": "DivideOneBatchIntoMultipleGroups",
+                    "description": "Divide objects from single batch into multiple sub parallel groups to avoid reaching the output limit of lookup activity.",
+                    "type": "ForEach",
+                    "dependsOn": [],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "items": {
+                        "value": "@range(0, add(div(pipeline().parameters.SumOfObjectsToCopyForCurrentBatch, pipeline().parameters.MaxNumberOfObjectsReturnedFromLookupActivity),\n                    if(equals(mod(pipeline().parameters.SumOfObjectsToCopyForCurrentBatch, pipeline().parameters.MaxNumberOfObjectsReturnedFromLookupActivity), 0), 0, 1)))",
+                        "type": "Expression"
+                      },
+                      "isSequential": false,
+                      "batchCount": 50,
+                      "activities": [
+                        {
+                          "name": "GetObjectsPerGroupToCopy",
+                          "description": "Get objects (tables etc.) from control table required to be copied in this group. The order of objects to be copied following the TaskId in control table (ORDER BY [TaskId] DESC).",
+                          "type": "Lookup",
+                          "dependsOn": [],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "source": {
+                              "type": "AzureSqlSource",
+                              "sqlReaderQuery": {
+                                "value": "WITH OrderedControlTable AS (\n                             SELECT *, ROW_NUMBER() OVER (ORDER BY [TaskId], [Id] DESC) AS RowNumber\n                             FROM @{pipeline().parameters.MainControlTableName}\n                             where TopLevelPipelineName = '@{pipeline().parameters.TopLevelPipelineName}'\n                             and TriggerName like '%@{pipeline().parameters.TriggerName}%' and CopyEnabled = 1)\n                             SELECT * FROM OrderedControlTable WHERE RowNumber BETWEEN @{add(mul(int(item()),pipeline().parameters.MaxNumberOfObjectsReturnedFromLookupActivity),\n                             add(mul(pipeline().parameters.SumOfObjectsToCopyForCurrentBatch, pipeline().parameters.CurrentSequentialNumberOfBatch), 1))}\n                             AND @{min(add(mul(int(item()), pipeline().parameters.MaxNumberOfObjectsReturnedFromLookupActivity), add(mul(pipeline().parameters.SumOfObjectsToCopyForCurrentBatch, pipeline().parameters.CurrentSequentialNumberOfBatch),\n                             pipeline().parameters.MaxNumberOfObjectsReturnedFromLookupActivity)),\n                            mul(pipeline().parameters.SumOfObjectsToCopyForCurrentBatch, add(pipeline().parameters.CurrentSequentialNumberOfBatch,1)), pipeline().parameters.SumOfObjectsToCopy)}",
+                                "type": "Expression"
+                              },
+                              "partitionOption": "None"
+                            },
+                            "dataset": {
+                              "referenceName": "MetadataDrivenCopyTask_0mc_ControlDS",
+                              "type": "DatasetReference",
+                              "parameters": {}
+                            },
+                            "firstRowOnly": false
+                          }
+                        },
+                        {
+                          "name": "CopyObjectsInOneGroup",
+                          "description": "Execute another pipeline to copy objects from one group. The objects belonging to this group will be copied parallelly.",
+                          "type": "ExecutePipeline",
+                          "dependsOn": [
+                            {
+                              "activity": "GetObjectsPerGroupToCopy",
+                              "dependencyConditions": [
+                                "Succeeded"
+                              ]
+                            }
+                          ],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "pipeline": {
+                              "referenceName": "MetadataDrivenCopyTask_0mc_BottomLevel",
+                              "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                              "ObjectsPerGroupToCopy": {
+                                "value": "@activity('GetObjectsPerGroupToCopy').output.value",
+                                "type": "Expression"
+                              },
+                              "windowStart": {
+                                "value": "@pipeline().parameters.windowStart",
+                                "type": "Expression"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "policy": {
+                  "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                  "MaxNumberOfObjectsReturnedFromLookupActivity": {
+                    "type": "Int"
+                  },
+                  "TopLevelPipelineName": {
+                    "type": "String"
+                  },
+                  "TriggerName": {
+                    "type": "String"
+                  },
+                  "CurrentSequentialNumberOfBatch": {
+                    "type": "Int"
+                  },
+                  "SumOfObjectsToCopy": {
+                    "type": "Int"
+                  },
+                  "SumOfObjectsToCopyForCurrentBatch": {
+                    "type": "Int"
+                  },
+                  "MainControlTableName": {
+                    "type": "String"
+                  },
+                  "windowStart": {
+                    "type": "String"
+                  }
+                },
+                "folder": {
+                  "name": "MetadataDrivenCopyTask_0mc"
+                },
+                "annotations": []
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/datasets', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_ControlDS')]",
+                "[resourceId('Microsoft.DataFactory/factories/pipelines', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_BottomLevel')]"
+              ]
+            },
+            {
+              "type": "Microsoft.DataFactory/factories/pipelines",
+              "apiVersion": "2018-06-01",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_TopLevel')]",
+              "properties": {
+                "description": "This pipeline will count the total number of objects (tables etc.) required to be copied in this run, come up with the number of sequential batches based on the max allowed concurrent copy task, and then execute another pipeline to copy different batches sequentially.",
+                "activities": [
+                  {
+                    "name": "GetSumOfObjectsToCopy",
+                    "description": "Count the total number of objects (tables etc.) required to be copied in this run.",
+                    "type": "Lookup",
+                    "dependsOn": [],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": {
+                          "value": "SELECT count(*) as count FROM @{pipeline().parameters.MainControlTableName} where TopLevelPipelineName='@{pipeline().Pipeline}' and CopyEnabled = 1",
+                          "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                      },
+                      "dataset": {
+                        "referenceName": "MetadataDrivenCopyTask_0mc_ControlDS",
+                        "type": "DatasetReference",
+                        "parameters": {}
+                      }
+                    }
+                  },
+                  {
+                    "name": "CopyBatchesOfObjectsSequentially",
+                    "description": "Come up with the number of sequential batches based on the max allowed concurrent copy tasks, and then execute another pipeline to copy different batches sequentially.",
+                    "type": "ForEach",
+                    "dependsOn": [
+                      {
+                        "activity": "GetSumOfObjectsToCopy",
+                        "dependencyConditions": [
+                          "Succeeded"
+                        ]
+                      }
+                    ],
+                    "userProperties": [],
+                    "typeProperties": {
+                      "items": {
+                        "value": "@range(0, add(div(activity('GetSumOfObjectsToCopy').output.firstRow.count,\n                    pipeline().parameters.MaxNumberOfConcurrentTasks),\n                    if(equals(mod(activity('GetSumOfObjectsToCopy').output.firstRow.count,\n                    pipeline().parameters.MaxNumberOfConcurrentTasks), 0), 0, 1)))",
+                        "type": "Expression"
+                      },
+                      "isSequential": true,
+                      "activities": [
+                        {
+                          "name": "CopyObjectsInOneBtach",
+                          "description": "Execute another pipeline to copy one batch of objects. The objects belonging to this batch will be copied parallelly.",
+                          "type": "ExecutePipeline",
+                          "dependsOn": [],
+                          "userProperties": [],
+                          "typeProperties": {
+                            "pipeline": {
+                              "referenceName": "MetadataDrivenCopyTask_0mc_MiddleLevel",
+                              "type": "PipelineReference"
+                            },
+                            "waitOnCompletion": true,
+                            "parameters": {
+                              "MaxNumberOfObjectsReturnedFromLookupActivity": {
+                                "value": "@pipeline().parameters.MaxNumberOfObjectsReturnedFromLookupActivity",
+                                "type": "Expression"
+                              },
+                              "TopLevelPipelineName": {
+                                "value": "@{pipeline().Pipeline}",
+                                "type": "Expression"
+                              },
+                              "TriggerName": {
+                                "value": "@{pipeline().TriggerName}",
+                                "type": "Expression"
+                              },
+                              "CurrentSequentialNumberOfBatch": {
+                                "value": "@item()",
+                                "type": "Expression"
+                              },
+                              "SumOfObjectsToCopy": {
+                                "value": "@activity('GetSumOfObjectsToCopy').output.firstRow.count",
+                                "type": "Expression"
+                              },
+                              "SumOfObjectsToCopyForCurrentBatch": {
+                                "value": "@min(pipeline().parameters.MaxNumberOfConcurrentTasks, activity('GetSumOfObjectsToCopy').output.firstRow.count)",
+                                "type": "Expression"
+                              },
+                              "MainControlTableName": {
+                                "value": "@pipeline().parameters.MainControlTableName",
+                                "type": "Expression"
+                              },
+                              "windowStart": {
+                                "value": "@pipeline().parameters.windowStart",
+                                "type": "Expression"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "policy": {
+                  "elapsedTimeMetric": {}
+                },
+                "parameters": {
+                  "MaxNumberOfObjectsReturnedFromLookupActivity": {
+                    "type": "Int",
+                    "defaultValue": 5000
+                  },
+                  "MaxNumberOfConcurrentTasks": {
+                    "type": "Int",
+                    "defaultValue": 20
+                  },
+                  "MainControlTableName": {
+                    "type": "String",
+                    "defaultValue": "dbo.MainControlTable"
+                  },
+                  "windowStart": {
+                    "type": "String"
+                  }
+                },
+                "folder": {
+                  "name": "MetadataDrivenCopyTask_0mc"
+                },
+                "annotations": [
+                  "MetadataDrivenSolution"
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]",
+                "[resourceId('Microsoft.DataFactory/factories/datasets', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_ControlDS')]",
+                "[resourceId('Microsoft.DataFactory/factories/pipelines', parameters('datafactoryName'), 'MetadataDrivenCopyTask_0mc_MiddleLevel')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "datafactoryId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.DataFactory/factories', parameters('datafactoryName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'purviewDeployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'storageDeploy')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "purivewToStorageRBAC",
+      "resourceGroup": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "purviewId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'purviewDeployment'), '2020-10-01').outputs.purviewId.value]"
+          },
+          "storageAccountFileSystemId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'storageDeploy'), '2020-10-01').outputs.storageFileSystemIds.value[0].storageFileSystemId]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "16172251741773563255"
+            }
+          },
+          "parameters": {
+            "storageAccountFileSystemId": {
+              "type": "string"
+            },
+            "purviewId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "purviewName": "[last(split(parameters('purviewId'), '/'))]",
+            "storageAccountName": "[if(greaterOrEquals(length(split(parameters('storageAccountFileSystemId'), '/')), 13), split(parameters('storageAccountFileSystemId'), '/')[8], 'incorrectSegmentLength')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2020-04-01-preview",
+              "scope": "[format('Microsoft.Storage/storageAccounts/{0}', format('{0}', variables('storageAccountName')))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', format('{0}', variables('storageAccountName'))), resourceId('Microsoft.Purview/accounts', variables('purviewName')), '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]",
+              "properties": {
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')]",
+                "principalId": "[reference(resourceId('Microsoft.Purview/accounts', variables('purviewName')), '2021-07-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'purviewDeployment')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'storageDeploy')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "sqlAdminUser": {
+      "type": "string",
+      "value": "[parameters('sqlLogin')]"
+    },
+    "sqlserverName": {
+      "type": "string",
+      "value": "[variables('sqlserverName')]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))]"
+    },
+    "purviewAccountName": {
+      "type": "string",
+      "value": "[variables('purviewName')]"
+    },
+    "purviewRootAdminPostUrl": {
+      "type": "string",
+      "value": "[format('{0}{1}/addRootCollectionAdmin?api-version=2021-07-01', environment().resourceManager, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'purviewDeployment'), '2020-10-01').outputs.purviewId.value)]"
+    },
+    "sqlserverHostName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy'), '2020-10-01').outputs.sqlserverHostName.value]"
+    },
+    "metaStoreDatabaseName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('{0}-autoingest-rg-{1}', parameters('prefix'), parameters('uniqueId'))), 'Microsoft.Resources/deployments', 'sqlDeploy'), '2020-10-01').outputs.metaSqlDatabaseName.value]"
+    }
+  }
+}
