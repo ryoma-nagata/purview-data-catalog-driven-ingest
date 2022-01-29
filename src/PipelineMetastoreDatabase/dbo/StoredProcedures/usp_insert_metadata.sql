@@ -63,7 +63,8 @@ BEGIN
     "TopLevelPipelineName": "'+ @topLevelPipelineName + N'",
     "TriggerName": [
         "Sandbox",
-        "Trigger01"
+        "Manual",
+        "Trigger"
     ],
     "DataLoadingBehaviorSettings": {
         "dataLoadingBehavior": "FullLoad"

@@ -238,7 +238,7 @@ resource datafactorySourceDS 'Microsoft.DataFactory/factories/datasets@2018-06-0
 
 
 resource datafactoryInsertFromPurviewMetadata 'Microsoft.DataFactory/factories/pipelines@2018-06-01' = {
-  name: 'InsertFromPurviewMetadataomc2'
+  name: 'InsertFromPurviewMetadataomc'
   parent:datafactory
   properties: {
     activities: [

@@ -878,7 +878,7 @@
             {
               "type": "Microsoft.DataFactory/factories/pipelines",
               "apiVersion": "2018-06-01",
-              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'InsertFromPurviewMetadataomc2')]",
+              "name": "[format('{0}/{1}', parameters('datafactoryName'), 'InsertFromPurviewMetadataomc')]",
               "properties": {
                 "activities": [
                   {
