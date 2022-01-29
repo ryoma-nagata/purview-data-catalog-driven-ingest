@@ -1,18 +1,19 @@
+# 整備中
+
+
 ## Azure SQL
 
 ### DBアクセス
 ```sql
 
-CREATE USER [rypv-syn-001] FROM EXTERNAL PROVIDER
+CREATE USER [-001] FROM EXTERNAL PROVIDER
 ALTER ROLE [db_datareader] ADD MEMBER [rypv-syn-001] 
 
 ```
 
 ## Purview
 
-### ルート コレクションのアクセス許可
-
-
+### アクセス許可
 
 ### ソース
 
@@ -20,10 +21,3 @@ ALTER ROLE [db_datareader] ADD MEMBER [rypv-syn-001]
 
 ### 分類
 
-
-
-## Synapse
-
-### アクセス管理者
-
-### リンクサービス
