@@ -97,7 +97,7 @@ stages:
                   --subscription $(AZURE_SUBSCRIPTION_ID) `
                   --exclude-change-types Ignore NoChange Unsupported `
                   --template-file "$(System.DefaultWorkingDirectory)/infra/main.json" `
-                  --parameters "$(System.DefaultWorkingDirectory)/infra/params_demo.json" sqlPassword="$(password)" sqlserverAdminUserObjectID="$(USER_OBJECT_ID)" sqlserverAdminUser="$(USER_PRINCIPAL_NAME)" prefix="$(PREFIX)" uniqueId="$(DEPLOY_ID)`
+                  --parameters "$(System.DefaultWorkingDirectory)/infra/params_demo.json" sqlPassword="$(password)" sqlserverAdminUserObjectID="$(USER_OBJECT_ID)" sqlserverAdminUser="$(USER_PRINCIPAL_NAME)" prefix="$(PREFIX)" uniqueId="$(DEPLOY_ID)" `
                   --result-format "FullResourcePayloads"
                 
               powerShellErrorActionPreference: "stop"
